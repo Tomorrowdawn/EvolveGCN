@@ -4,6 +4,9 @@ from torch.nn import init
 from dgl.nn.pytorch import GraphConv
 from torch.nn.parameter import Parameter
 
+class AttentionPooling(nn.Module):
+    def __init__(self, i):
+        pass##TODO:
 
 class MatGRUCell(torch.nn.Module):
     """
@@ -195,3 +198,17 @@ class EvolveGCNO(nn.Module):
                 W = self.recurrent_layers[i](W)
                 feature_list[j] = self.gnn_convs[i](g, feature_list[j], weight=W)
         return self.mlp(feature_list[-1])
+
+class ProposalPredictor(nn.Module):
+    def __init__(self):
+        pass
+    def forward(self, g_list, proposal):
+        """
+        
+        g_list:一列图，每个图包含ndata['feat']和edata['weight'](E, 1)
+        proposal: 一个字典，包含'id','sponsors'和'cosponsors'。分别代表提案id，发起者（一个tensor），协助发起者（一个tensor）
+        返回一个[N, 3]张量，表示每个节点yes/no/none的概率。
+        """
+        
+        pass
+    
