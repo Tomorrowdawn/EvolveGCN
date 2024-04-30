@@ -182,3 +182,5 @@ ENV/
 
 *.pt
 *.pth
+
+data/*
