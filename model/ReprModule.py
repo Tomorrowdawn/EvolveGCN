@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import init
-from dgl.nn.pytorch import GraphConv
+from dgl.nn.pytorch import GraphConv, GATConv
 from torch.nn.parameter import Parameter
 
 class MatGRUCell(torch.nn.Module):
@@ -125,26 +126,13 @@ class EvolveGCNO(nn.Module):
         for gcn_weight in self.gcn_weights_list:
             init.xavier_uniform_(gcn_weight)
 
-    def forward(self, g_list):
-        feature_list = []
-        for g in g_list:
-            feature_list.append(g.ndata['feat'])
+    def forward(self, g, h=None):
+        feat = g.ndata['feat']
         for i in range(self.num_layers):
             W = self.gcn_weights_list[i]
-            for j, g in enumerate(g_list):
-                # Attention: I try to use the below code to set gcn.weight(similar to pyG_temporal),
-                # but it doesn't work. It seems that the gradient function lost in this situation,
-                # more discussion see here: https://github.com/benedekrozemberczki/pytorch_geometric_temporal/issues/80
-                # ====================================================
-                # W = self.gnn_convs[i].weight[None, :, :]
-                # W, _ = self.recurrent_layers[i](W)
-                # self.gnn_convs[i].weight = nn.Parameter(W.squeeze())
-                # ====================================================
-
-                # Remove the following line of code, it will become `GCN`.
-                W = self.recurrent_layers[i](W)
-                feature_list[j] = self.gnn_convs[i](g, feature_list[j], weight=W, edge_weight=g.edata['weight'])
-        return feature_list[-1]
+            W = self.recurrent_layers[i](W)
+            feat = self.gnn_convs[i](g, feat, weight=W, edge_weight=g.edata['weight'])
+        return feat
 
 class ReprModule(nn.Module):
     def __init__(self, in_feats=166, n_hidden=256, num_layers=2,) -> None:
@@ -152,4 +140,37 @@ class ReprModule(nn.Module):
     def forward(self, g_list):
         return self.model(g_list)
 
+class WeightedGAT(nn.Module):
+    def __init__(self, node_feats_num,
+                 embedding_size, heads=3, layers=3, split_heads=True):
+        super().__init__()
+        self.gat_layers = nn.ModuleList()
+        # three-layer GAT
+        if split_heads:
+            embedding_size = embedding_size // heads
+        for i in range(layers):
+            if i == 0:
+                self.gat_layers.append(
+                    GATConv(
+                        node_feats_num, embedding_size, heads,
+                        residual=True, activation=F.elu
+                    )
+                )
+            elif i == layers - 1:
+                self.gat_layers.append(
+                    GATConv(
+                        embedding_size * heads, embedding_size, heads,
+                        residual=True,activation=None
+                    ))
+            else:
+                self.gat_layers.append(
+                    GATConv(embedding_size * heads,  embedding_size, heads,
+                            residual=True, activation=F.elu)
+                )
+    def forward(self, g, inputs, edge_weight):
+        h = inputs
+        for i, layer in enumerate(self.gat_layers):
+            h = layer(g, h, edge_weight=edge_weight)
+            h = h.flatten(1)
+        return h
     
