@@ -12,13 +12,23 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     criterion = torch.nn.CrossEntropyLoss()
     for epoch in range(epoches):
-        for g in gen:
+        for i, (g, bills) in enumerate(gen):
+            ##g: 所有节点都在, 但某些边被mask掉
+            g = dgl.add_self_loop(g)
+            votes :torch.Tensor= g.ndata['bill'].to(device)##[N, B]矩阵, 填充为1,0,-1,-inf
             optimizer.zero_grad()
             g:dgl.DGLGraph
-            node_mask = g.ndata['node_mask'].to(device)
-            labels = g.ndata['label'].to(device)
-            prediction = model(g, g.ndata['feat'].to(device), g.edata['weight'].to(device))
-            loss = criterion(prediction[node_mask], labels[node_mask])
+            node_mask = (votes > -10)
+            labels = votes[node_mask] + 1##0, 1, 2
+            labels = labels.long()
+            proposal = {
+                'id':None,
+                'sponsors':bills['sponsors'], ##[B, 1]
+                'cosponsors':bills['cosponsors'] ##[B, 4]
+            }
+            prediction:torch.Tensor = model(i, g, proposal)##[B, N, 3]
+            prediction = prediction.transpose(0, 1)##[N, B, 3], fit to node_mask.
+            loss = criterion(prediction[node_mask], labels)
             loss.backward()
             optimizer.step()
             if report_hook is not None:

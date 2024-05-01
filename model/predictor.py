@@ -82,15 +82,14 @@ class GATPredictor(nn.Module):
         if self.node_embeds is None:
             inputs = g.ndata['feat']
         else:
-            if 'feat' in g.ndata:
-                warnings.warn("you provided both node features and node embeddings, only the embeddings will be used. Make sure you know what you are doing.")
-            inputs = self.node_embeds.weight
+            inputs = self.node_embeds
         edge_weights = g.edata['weight']
-        repr = self.repr(g, inputs, edge_weights)
+        repr = self.repr(g, inputs, edge_weights)##[N, H]
         sponsors = proposal['sponsors']
         cosponsors = proposal['cosponsors']
         # 得到发起者的embedding
         sponsor_H, cosponsor_H = get_embeddings(repr, sponsors, cosponsors)
-        H = torch.cat([sponsor_H, cosponsor_H], dim=0)
-        attention_H = self.pooling(repr, H)
-        return self.cls(attention_H)
+        H = torch.cat([sponsor_H, cosponsor_H], dim=1)##[B, 5, H]
+        repr = repr.unsqueeze(0).expand(H.shape[0], -1, H.shape[-1])
+        attention_H = self.pooling(repr, H)##[B, N, H]
+        return self.cls(attention_H)##[B, N, 3]
