@@ -15,7 +15,7 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
         for i, (g, bills) in enumerate(gen):
             ##g: 所有节点都在, 但某些边被mask掉
             g = dgl.add_self_loop(g)
-            votes :torch.Tensor= g.ndata['bill'].to(device)##[N, B]矩阵, 填充为1,0,-1,-inf
+            votes :torch.Tensor= g.ndata['vote'].to(device)##[N, B]矩阵, 填充为1,0,-1,-inf
             optimizer.zero_grad()
             g:dgl.DGLGraph
             node_mask = (votes > -10)
