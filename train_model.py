@@ -64,11 +64,11 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
     for epoch in range(epoches):
         for i, (g, bills) in enumerate(gen):
             ##g: 所有节点都在, 但某些边被mask掉
-            votes:torch.Tensor= g.ndata['vote'].to(device)##[N, B]矩阵, 填充为1,0,-1,-inf
+            votes:torch.Tensor= g.ndata['vote']##[N, B]矩阵, 填充为1,0,-1,-inf
             valid_mask = find_valid_columns(votes)
-            votes = votes[:, valid_mask]
-            sponsors = bills['sponsors'][valid_mask]
-            cosponsors = bills['cosponsors'][valid_mask]
+            votes = votes[:, valid_mask].to(device)
+            sponsors = bills['sponsors'][valid_mask].to(device)
+            cosponsors = bills['cosponsors'][valid_mask].to(device)
             for batch in get_random_batches(votes, sponsors, cosponsors,
                                             batch_size=batch_size):
                 votes, sponsors, cosponsors = batch
