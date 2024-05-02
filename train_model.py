@@ -84,14 +84,14 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
                     'sponsors':sponsors, ##[B, 1]
                     'cosponsors':cosponsors ##[B, 4]
                 }
-                prediction:torch.Tensor = model(i, g, proposal)##[B, N, 3]
-                prediction = prediction.transpose(0, 1)##[N, B, 3], fit to node_mask.
-                loss = criterion(prediction[node_mask], labels)
+                logits:torch.Tensor = model(i, g, proposal)##[B, N, 3]
+                logits = logits.transpose(0, 1)##[N, B, 3], fit to node_mask.
+                loss = criterion(logits[node_mask], labels)
                 loss.backward()
                 optimizer.step()
                 if report_hook is not None:
                     report_hook(epoch, i, loss.item(), g,
-                                proposal, prediction)
+                                proposal, logits)
         if epoch > 0 and epoch % eval_epoches == 0 and eval_hook is not None:
             eval_hook(model, gen)
             model.train()

@@ -74,7 +74,6 @@ class GATPredictor(nn.Module):
         self.pooling = AttentionPooling(embedding_dim)
         self.cls = nn.Sequential(
             nn.Linear(embedding_dim, 3),
-            nn.Softmax(3)
         )
     def reset_weights(self):
         pass
