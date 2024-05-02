@@ -20,13 +20,15 @@ def get_embeddings(embeddings, *indices):
 
 class AttentionPooling(nn.Module):
     def __init__(self, input_dim):
-        self.q_proj = nn.Linear(input_dim, input_dim)
-        self.k_proj = nn.Linear(input_dim, input_dim)
-        self.v = nn.Parameter(torch.rand(input_dim))
+        super(AttentionPooling, self).__init__()
+        self.q_proj = nn.Linear(input_dim, input_dim, bias=False)
+        self.k_proj = nn.Linear(input_dim, input_dim, bias=False)
+        self.v_proj = nn.Linear(input_dim, input_dim, bias=False)
     def forward(self, query, key):
         q = self.q_proj(query)
         k = self.k_proj(key)
-        output = scaled_dot_product_attention(q, k, self.v)
+        v = self.v_proj(key)
+        output = scaled_dot_product_attention(q, k, v)
         return output
 
 class ProposalPredictor(nn.Module):
@@ -66,6 +68,7 @@ class ProposalPredictor(nn.Module):
 class GATPredictor(nn.Module):
     def __init__(self, num_nodes, node_embedding_dim = None,
                  embedding_dim = 64, num_heads = 8, num_layers = 3):
+        super(GATPredictor, self).__init__()
         self.node_embeds = None
         if node_embedding_dim is None:
             in_feats = node_embedding_dim
