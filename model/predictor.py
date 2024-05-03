@@ -70,7 +70,7 @@ class GATPredictor(nn.Module):
                  embedding_dim = 64, num_heads = 8, num_layers = 3):
         super(GATPredictor, self).__init__()
         self.node_embeds = None
-        if node_embedding_dim is None:
+        if node_embedding_dim is not None:
             in_feats = node_embedding_dim
             self.node_embeds = nn.Embedding(num_nodes, node_embedding_dim)          
         self.repr = WeightedGAT(in_feats, embedding_dim, num_heads, num_layers)
