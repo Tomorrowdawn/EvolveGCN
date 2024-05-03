@@ -84,7 +84,7 @@ class GATPredictor(nn.Module):
         if self.node_embeds is None:
             inputs = g.ndata['feat']
         else:
-            inputs = self.node_embeds
+            inputs = self.node_embeds.weight
         edge_weights = g.edata['weight']
         repr = self.repr(g, inputs, edge_weights)##[N, H]
         sponsors = proposal['sponsors']

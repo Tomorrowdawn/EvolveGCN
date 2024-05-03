@@ -71,7 +71,7 @@ class TestWeightedGAT(unittest.TestCase):
     def test_dimension(self):
         input_dim, embedding_size = 2, 3
         module = WeightedGAT(input_dim, embedding_size)
-        input = nn.Embedding(6, input_dim)(torch.tensor([0, 1, 2, 3, 4, 5]))
+        input = nn.Embedding(6, input_dim).weight
         self.g.edata["weight"] = torch.randn(12)
         edge_weights = self.g.edata["weight"]
         output = module.forward(self.g, input, edge_weights)
