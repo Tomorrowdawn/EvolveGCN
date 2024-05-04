@@ -96,3 +96,48 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
             eval_hook(model, gen)
             model.train()
     return model
+
+# 导入加载数据集的函数
+from load_dataset import load_dataset, split_data
+
+# 定义数据集所在的目录
+dataset_dir = 'data'  # 替换为你的数据集目录
+
+# 加载数据集
+cosponsors, members, votes = load_dataset(dataset_dir)
+
+# 可选：如果split_data函数已定义完整，你可以用它来分割数据
+# train_set, test_set = split_data(votes) # 假设是对votes进行分割
+
+# 创建GraphGenerator实例
+gen = GraphGenerator(proposals=cosponsors, members=members, votes=votes)
+
+# 实例化模型
+# model = GATPredictor(gen.get_num_nodes(), node_embedding_size=64, num_heads=3)
+
+# 设定设备
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# 进行训练的测试函数
+def test_train_model():
+    try:
+        # 调用train_model函数
+        trained_model = train_model(gen, node_embedding_size=64,
+                                    epoches=1, batch_size=64, 
+                                    lr=1e-3, device=device,
+                                    report_hook=report_hook, eval_hook=eval_hook,
+                                    eval_epoches=10)
+        print("训练成功！")
+    except Exception as e:
+        print(f'训练失败: {e}')
+
+# 定义一个简单的报告钩子函数
+def report_hook(epoch, i, loss, g, proposal, logits):
+    print(f"Epoch: {epoch}, Batch: {i}, Loss: {loss}")
+
+# 定义一个简单的评估钩子函数
+def eval_hook(model, gen):
+    print("评估模型...")
+
+# 运行测试
+test_train_model()
