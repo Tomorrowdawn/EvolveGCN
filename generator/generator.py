@@ -5,7 +5,8 @@ from dgl import DGLGraph
 import torch
 from scipy.spatial.distance import pdist, squareform
 from dgl.nn.pytorch.conv import EdgeWeightNorm
-
+from tqdm import tqdm
+import time
 
 class GraphGenerator():
     def __init__(self, proposals:pd.DataFrame, 
@@ -92,12 +93,6 @@ class GraphGenerator():
         # 统计 bill 数量
         # self.bill_num = self.proposals['bill_id'].nunique()
         self.bill_num = self.votes['bill_name'].nunique()
-        # 统计 member 数量
-        self.member_num = self.members['members'].apply(len).sum()
-        # 初始化 meeting_bill_member_tensor_voteResult
-        self.meeting_bill_member_tensor_voteResult = np.full((self.meeting_num, self.bill_num, self.member_num), -np.inf) # 用于存储每个议案的投票结果,初始化为-inf
-        # 初始化 meeting_bill_tensor_maxVoteCount
-        self.meeting_bill_tensor_maxVoteCount = np.zeros((self.meeting_num, self.bill_num)) # 用于存储每次会议每个议案的最大投票次数,初始化为0
 
         # 初始化 meeting2index
         self.meeting2index = dict(zip(self.votes['meeting_id'].unique(), range(self.meeting_num)))
@@ -106,9 +101,26 @@ class GraphGenerator():
         votes_clone.sort_values(by=['meeting_id', 'bill_name'], inplace=True)
         self.bill2index = dict(zip(votes_clone['bill_name'].unique(), range(self.bill_num)))
         # 初始化 member2index, 直接按 id 字典序, 从0开始编号
-        members_list = self.members['members'].values
-        members_list = sorted([member for sublist in members_list for member in sublist])
-        self.member2index = dict(zip(members_list, range(self.member_num)))
+        # members 是一个 DataFrame，包含 'meeting' , 'subclub', 'members' 三列, 'members' 列是一个列表
+        members_list = self.members['members'].tolist()
+        all_members = [member for sublist in members_list for member in sublist] # 将所有成员放在一个列表中
+        all_members = list(set(all_members)) # 去重
+        all_members.sort() # 排序
+        # 统计 member 数量
+        self.member_num = len(all_members)
+        self.member2index = dict(zip(all_members, range(self.member_num)))
+
+        # 初始化 meeting_bill_member_tensor_voteResult
+        self.meeting_bill_member_tensor_voteResult = np.full((self.meeting_num, self.bill_num, self.member_num), -np.inf) # 用于存储每个议案的投票结果,初始化为-inf
+        # 初始化 meeting_bill_tensor_maxVoteCount
+        self.meeting_bill_tensor_maxVoteCount = np.zeros((self.meeting_num, self.bill_num)) # 用于存储每次会议每个议案的最大投票次数,初始化为0
+
+        # print("member2index: ", self.member2index)
+
+        # members_list = self.members['id'].values
+        # members_list = sorted([member for sublist in members_list for member in sublist])
+        # self.member2index = dict(zip(members_list, range(self.member_num)))
+
 
         # 填充 meeting_bill_member_tensor
         for idx, row in self.votes.iterrows():
@@ -116,17 +128,22 @@ class GraphGenerator():
             bill_idx = self.bill2index[row['bill_name']]
             # 创建一个长为 member_num 的数组, 用于存储每个成员的投票次数
             member_vote_count = np.zeros(self.member_num)   
-            for member in row['members']:
-                member_idx = self.member2index[member]
-                if row['vote'] == 'Y':
-                    self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 1
-                    member_vote_count[member_idx] += 1
-                elif row['vote'] == 'N':
-                    self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = -1
-                    member_vote_count[member_idx] += 1
-                elif row['vote'] == 'NV':
-                    self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 0
-                    member_vote_count[member_idx] += 1
+            member = row['id']
+            # print("row: ", row)
+            # print("member: ", member)
+            # 如果 member 不在 member2index 中，跳过
+            if member not in self.member2index:
+                continue
+            member_idx = self.member2index[member]
+            if row['vote'] == 'Y':
+                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 1
+                member_vote_count[member_idx] += 1
+            elif row['vote'] == 'N':
+                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = -1
+                member_vote_count[member_idx] += 1
+            elif row['vote'] == 'NV':
+                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 0
+                member_vote_count[member_idx] += 1
             # 更新 meeting_bill_tensor_maxVoteCount
             self.meeting_bill_tensor_maxVoteCount[meeting_idx, bill_idx] = np.max(member_vote_count)
             
@@ -142,7 +159,12 @@ class GraphGenerator():
         normalized_max_vote_count = np.where(max_vote_count == 0, 1, max_vote_count) # 防止分母为零
 
         # 计算标准化相似度分数
-        normalized_scores = m_copy[meeting_index, :, u] * m_copy[meeting_index, :, v] / normalized_max_vote_count # 标准化相似度分数，可以考虑修改为其他标准化方法
+        # print("u: ", u)
+        # print("v: ", v)
+        # print("meeting_index: ", meeting_index)
+        # normalized_scores = m_copy[meeting_index, :, u] * m_copy[meeting_index, :, v] / normalized_max_vote_count # 标准化相似度分数，可以考虑修改为其他标准化方法
+        # 计算两个成员对于所有议案的标准化投票总和的相似度
+        normalized_scores = u * v / normalized_max_vote_count
         similarity_score = np.sum(normalized_scores) # 计算相似度分数
 
         return similarity_score
@@ -151,13 +173,34 @@ class GraphGenerator():
     def create_subgraph(self):
         subgraphs = []  # 存储每次会议的子图
 
+        m_copy = self.meeting_bill_member_tensor_voteResult
+        mask = m_copy == -np.inf
+        m_copy[mask] = 0
+
         # 对每次会议创建子图
-        for meeting_index in range(self.meeting_num):
+        # for meeting_index in range(self.meeting_num):
+        for meeting_index in tqdm(range(self.meeting_num), desc="Generating subgraphs"):
+            start_time = time.time()
+
             # 提取每次会议的投票tensor
-            votes_slice = self.meeting_bill_member_tensor_voteResult[meeting_index, :, :]
+            votes_slice = m_copy[meeting_index, :, :]
+
             
+                        
             # 计算相似度矩阵（其尺寸应该是 num_members x num_members）
-            similarity_matrix = squareform(pdist(votes_slice.T, lambda u, v: self.similarity_measure(u, v, meeting_index)))
+            # similarity_matrix = squareform(pdist(votes_slice.T, lambda u, v: self.similarity_measure(u, v, meeting_index)))
+            
+            max_vote_count = self.meeting_bill_tensor_maxVoteCount[meeting_index, :] # 每个议案的最大投票次数
+            normalized_max_vote_count = np.where(max_vote_count == 0, 1, max_vote_count) # 防止分母为零
+            # normalized_max_vote_count 从(8849,) 重塑为 (8849,1)
+            normalized_max_vote_count = normalized_max_vote_count[:, np.newaxis]
+
+            # 这样就可以保持行对行的除法操作，每个议题对每个成员进行归一化,  标准化议案贡献，使得每个议案对于相似度贡献相同 (members x bills)
+            normalized_votes = votes_slice / normalized_max_vote_count
+
+            # 利用矩阵乘法计算成员间的相似度 (members x members)
+            # np.dot 对二维数组执行矩阵乘法，对于一维数组执行内积
+            similarity_matrix = np.dot(normalized_votes, normalized_votes.T)
             
             # 根据相似度矩阵创建图
             g = dgl.DGLGraph()
@@ -166,15 +209,22 @@ class GraphGenerator():
             src_list, dst_list = np.triu_indices(self.member_num, k=1)  # k=1表示不包括对角线
             src_list = src_list.astype(np.int64)
             dst_list = dst_list.astype(np.int64)
+            # print("src_list.shape before: ", src_list.shape)
+            # print("dst_list.shape before: ", dst_list.shape)
 
             # 从这些索引中得到所有的边的权重，并过滤掉无穷大的权重
             edge_weights = similarity_matrix[src_list, dst_list]
+            # print("edge_weights.shape: ", edge_weights.shape)
             finite_edges = ~np.isinf(edge_weights)
+            # print("finite_edges.shape: ", finite_edges.shape)
             
             # 只保留有限权重的边
             src_list = src_list[finite_edges]
             dst_list = dst_list[finite_edges]
             edge_weights = edge_weights[finite_edges]
+            # print("src_list.shape: ", src_list.shape)
+            # print("dst_list.shape: ", dst_list.shape)
+            # print("edge_weights.shape: ", edge_weights.shape)
 
             # 如果有边可以添加，那么转换权重到适当的类型并添加这些边
             if len(src_list) > 0:
@@ -184,11 +234,20 @@ class GraphGenerator():
                 # 一次性添加所有的边和它们的权重
                 g.add_edges(src_list, dst_list, {'weight': edge_weights_tensor})
             
-            # 将NumPy数组转换为PyTorch张量
-            vote_data = torch.from_numpy(votes_slice).float()
+            # # 将NumPy数组转换为PyTorch张量
+            vote_data = torch.from_numpy(votes_slice.T).float()
+
+            # # 输出有多少个节点
+            # print("g.num_nodes(): ", g.num_nodes())
+            # # 输出有多少个边
+            # print("g.num_edges(): ", g.num_edges())
+            # # 输出vote_data 的形状
+            # print("vote_data.shape: ", vote_data.shape)
             
-            # 把每个成员的投票数据设置为节点的'data'特征
+            # # 把每个成员的投票数据设置为节点的'data'特征
             g.ndata['vote'] = vote_data
+
+            # 为了把每个成员的投票数据设置为节点的'data'特征， 遍历已有节点并设置'data'特征
             
             subgraphs.append(g)
         
@@ -205,7 +264,8 @@ class GraphGenerator():
             # 选择权重大于阈值的边
             mask = edge_weights > self.threshold
             # 保留权重大于阈值的边的子图
-            sub_g = g.edge_subgraph(mask, preserve_nodes=True)
+            # sub_g = g.edge_subgraph(mask, preserve_nodes=True)
+            sub_g = g.edge_subgraph(mask, relabel_nodes=False)
             updated_subgraphs.append(sub_g)
 
         # 遍历每个有更新的子图，并为每个子图加上自循环边
@@ -243,6 +303,8 @@ class GraphGenerator():
             # 如果 cosponsors 的数量不足 4，用 -1 填充
             while len(cosponsor_indices) < 4:
                 cosponsor_indices.append(-1)
+            # 如果 cosponsors 的数量超过 4，只保留前 4 个
+            cosponsor_indices = cosponsor_indices[:4]
             cosponsor_tensor = torch.tensor(cosponsor_indices, dtype=torch.long)
             bills['cosponsors'].append(cosponsor_tensor)
         # 将 sponsors 和 cosponsors 转换为张量
@@ -252,8 +314,12 @@ class GraphGenerator():
         self.bills = bills
         
         pass
+    
+    def get_num_nodes(self):
+        return self.member_num
 
     def __iter__(self):
+        self.index = 0
         return self
         
     def __next__(self):
