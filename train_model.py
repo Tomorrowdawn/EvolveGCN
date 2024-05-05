@@ -69,8 +69,8 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
             votes = votes[:, valid_mask].to(device)
             sponsors = bills['sponsors'][valid_mask].to(device)
             cosponsors = bills['cosponsors'][valid_mask].to(device)
-            for batch in get_random_batches(votes, sponsors, cosponsors,
-                                            batch_size=batch_size):
+            for b_idx, batch in enumerate(get_random_batches(votes, sponsors, cosponsors,
+                                            batch_size=batch_size)):
                 votes, sponsors, cosponsors = batch
                 node_mask = (votes > -10)
                 if node_mask.sum() < 1:
@@ -90,10 +90,12 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
                 loss.backward()
                 optimizer.step()
                 if report_hook is not None:
-                    report_hook(epoch, i, loss.item(), g,
+                    report_hook(epoch, i, b_idx, loss.item(), g,
                                 proposal, logits)
         if epoch > 0 and epoch % eval_epoches == 0 and eval_hook is not None:
+            gen.eval()
             eval_hook(model, gen)
+            gen.train()
             model.train()
     return model
 
@@ -132,8 +134,8 @@ def test_train_model():
         print(f'训练失败: {e}')
 
 # 定义一个简单的报告钩子函数
-def report_hook(epoch, i, loss, g, proposal, logits):
-    print(f"Epoch: {epoch}, Batch: {i}, Loss: {loss}")
+def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits):
+    print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}")
 
 # 定义一个简单的评估钩子函数
 def eval_hook(model, gen):

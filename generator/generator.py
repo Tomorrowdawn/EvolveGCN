@@ -47,6 +47,7 @@ class GraphGenerator():
         self.create_subgraph()
         self.modify_subgraph()
         self.create_bills()
+        self.training = True
 
         pass     
     
@@ -317,14 +318,22 @@ class GraphGenerator():
     
     def get_num_nodes(self):
         return self.member_num
-
+    def train(self):
+        self.training = True
+    def eval(self):
+        self.training = False
     def __iter__(self):
-        self.index = 0
         return self
         
     def __next__(self):
-        if self.index < len(self):
-            result = (self.subgraph[self.index], self.bills)
+        if self.training:
+            offset = 0
+            bound = 12
+        else:
+            offset = 12
+            bound = 15
+        if self.index + offset < bound:
+            result = (self.subgraph[self.index + offset], self.bills)
             self.index += 1
             return result
         else:
