@@ -186,3 +186,4 @@ ENV/
 
 data/*
 !data/.gitkeep
+!data/gat_predictor.pt

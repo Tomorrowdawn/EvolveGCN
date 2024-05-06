@@ -135,6 +135,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = 'cpu'
 gen.to(device)
 # 进行训练的测试函数
+if os.path.exists('./data/gat_predictor.pt'):
+    
+    model = GATPredictor(gen.get_num_nodes(), node_embedding_size=16, num_heads=4)
+    model.load_state_dict(torch.load('./data/gat_predictor.pt'))
+    raise Exception("俺已经训练好模型嘞, 自己看看要测啥, 不用再训了喵.")
 def test_train_model():
     try:
         # 调用train_model函数
