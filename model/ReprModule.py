@@ -142,11 +142,13 @@ class ReprModule(nn.Module):
 
 class WeightedGAT(nn.Module):
     def __init__(self, node_feats_num,
-                 embedding_size, heads=3, layers=3, split_heads=True):
+                 embedding_size, heads=4, layers=3, split_heads=True):
         super().__init__()
         self.gat_layers = nn.ModuleList()
         # three-layer GAT
         if split_heads:
+            if embedding_size % heads != 0:
+                raise ValueError("embedding size should be divisible by heads")
             embedding_size = embedding_size // heads
         for i in range(layers):
             if i == 0:

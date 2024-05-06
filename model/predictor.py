@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch
 from dgl import DGLGraph
 import torch
-from torch.nn.functional import scaled_dot_product_attention, embedding
+from torch.nn.functional import scaled_dot_product_attention
+import torch.nn.functional as F
 import warnings
 def get_embeddings(embeddings, *indices):
     assert indices[0].dim() == 2
@@ -11,10 +12,15 @@ def get_embeddings(embeddings, *indices):
     zero_embedding = torch.zeros(1, embeddings.shape[1], dtype=embeddings.dtype, device=embeddings.device)
     embeddings_with_zero = torch.cat([embeddings, zero_embedding], dim=0)
 
+    #print("embedding shape: ", embeddings.shape)
     # 使用索引操作获取对应的 embeddings
     result = []
     for indice in indices:
-        result.append(embeddings_with_zero[indices])
+        mask = (indice == -1)
+        indice[mask] = embeddings.shape[0]
+        output = F.embedding(indice, embeddings_with_zero)
+        result.append(output)
+        #print("fetched embeddings shape: ", result[-1].shape)
     
     return result
 
@@ -67,7 +73,7 @@ class ProposalPredictor(nn.Module):
 
 class GATPredictor(nn.Module):
     def __init__(self, num_nodes, node_embedding_dim = None,
-                 embedding_dim = 64, num_heads = 8, num_layers = 3):
+                embedding_dim = 64,num_heads = 8, num_layers = 3):
         super(GATPredictor, self).__init__()
         self.node_embeds = None
         if node_embedding_dim is not None:
@@ -87,8 +93,13 @@ class GATPredictor(nn.Module):
             inputs = self.node_embeds.weight
         edge_weights = g.edata['weight']
         repr = self.repr(g, inputs, edge_weights)##[N, H]
+        #print("repr shape: ", repr.shape)
         sponsors = proposal['sponsors']
+        #print("sponsor shape: ", sponsors.shape)
+        #print(sponsors)
         cosponsors = proposal['cosponsors']
+        #print("cosponsor shape: ", cosponsors.shape)
+        #print(cosponsors)
         # 得到发起者的embedding
         sponsor_H, cosponsor_H = get_embeddings(repr, sponsors, cosponsors)
         H = torch.cat([sponsor_H, cosponsor_H], dim=1)##[B, 5, H]

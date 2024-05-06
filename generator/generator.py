@@ -68,7 +68,7 @@ class GraphGenerator():
         if 'date' in self.votes.columns:
             # 检查 'date' 列是否已转换为 datetime 类型
             if not pd.api.types.is_datetime64_any_dtype(self.votes['date']):
-                self.votes['date'] = pd.to_datetime(self.votes['date'])
+                self.votes['date'] = pd.to_datetime(self.votes['date'], utc=True)
         else:
             print("警告：数据中不存在 'date' 列。")
             print("列名：", self.votes.columns)
@@ -322,7 +322,14 @@ class GraphGenerator():
         self.training = True
     def eval(self):
         self.training = False
+    def to(self, device):
+        self.device = device
+        for i in range(len(self.subgraph)):
+            self.subgraph[i] = self.subgraph[i].to(device)
+        self.bills['sponsors'] = self.bills['sponsors'].to(device)
+        self.bills['cosponsors'] = self.bills['cosponsors'].to(device)
     def __iter__(self):
+        self.index = 0
         return self
         
     def __next__(self):

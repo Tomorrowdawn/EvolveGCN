@@ -39,43 +39,49 @@ def find_valid_columns(votes):
     返回值：
     - valid_indices: 一个包含合法列的向量.
     """
-    # 创建一个与 votes 形状相同的张量，用于存储每个元素是否为 -inf
-    is_neg_inf = votes != float('-inf')
+    is_valid = votes != float('-inf')
 
     # 沿着第一个维度求和，得到每一列中 -inf 的数量
-    neg_inf_count = is_neg_inf.sum(dim=0)
+    valid_count = is_valid.sum(dim=0)
 
-    # 找出 -inf 数量不等于 N 的列的下标
-    valid_indices = torch.where(neg_inf_count != votes.shape[0])[0]
+    valid_indices = torch.where(valid_count > 0)[0]
 
     return valid_indices
 
 
 def train_model(gen:GraphGenerator, node_embedding_size = 64,
-                epoches:int = 100, batch_size = 64,
+                epoches:int = 100, batch_size = 32,
                 lr:float=1e-3, device='cuda',
                 report_hook = None, eval_hook = None, eval_epoches = 10):
     N = gen.get_num_nodes()
-    model = GATPredictor(N, node_embedding_size, num_heads=3)
+    print("num nodes: ", N)
+    model = GATPredictor(N, node_embedding_size, num_heads=4)
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
+    gen.train()
     for epoch in range(epoches):
         for i, (g, bills) in enumerate(gen):
             ##g: 所有节点都在, 但某些边被mask掉
+            #g.to(device)
             votes:torch.Tensor= g.ndata['vote']##[N, B]矩阵, 填充为1,0,-1,-inf
             valid_mask = find_valid_columns(votes)
             votes = votes[:, valid_mask].to(device)
+            #print("valid votes shape: ", votes.shape)
             sponsors = bills['sponsors'][valid_mask].to(device)
             cosponsors = bills['cosponsors'][valid_mask].to(device)
             for b_idx, batch in enumerate(get_random_batches(votes, sponsors, cosponsors,
                                             batch_size=batch_size)):
+                
                 votes, sponsors, cosponsors = batch
+                #print("batch idx: ", b_idx)
                 node_mask = (votes > -10)
                 if node_mask.sum() < 1:
+                    #print("skip")
                     continue
                 labels = votes[node_mask] + 1##0, 1, 2
+                #print(" batch labels :", labels.shape)
                 labels = labels.long()
                 optimizer.zero_grad()
                 g:dgl.DGLGraph
@@ -91,7 +97,7 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
                 optimizer.step()
                 if report_hook is not None:
                     report_hook(epoch, i, b_idx, loss.item(), g,
-                                proposal, logits)
+                                proposal, logits[node_mask], labels)
         if epoch > 0 and epoch % eval_epoches == 0 and eval_hook is not None:
             gen.eval()
             eval_hook(model, gen)
@@ -106,36 +112,74 @@ from load_dataset import load_dataset, split_data
 dataset_dir = 'data'  # 替换为你的数据集目录
 
 # 加载数据集
-cosponsors, members, votes = load_dataset(dataset_dir)
-
 # 可选：如果split_data函数已定义完整，你可以用它来分割数据
 # train_set, test_set = split_data(votes) # 假设是对votes进行分割
 
 # 创建GraphGenerator实例
-gen = GraphGenerator(proposals=cosponsors, members=members, votes=votes)
+import os
+import pickle
+if os.path.exists(os.path.join('./data', 'gen.pkl')):
+    with open(os.path.join('./data', 'gen.pkl'), 'rb') as f:
+        gen = pickle.load(f)
+else:
+    cosponsors, members, votes = load_dataset(dataset_dir)
+    gen = GraphGenerator(proposals=cosponsors, members=members, votes=votes)
+    with open(os.path.join('./data', 'gen.pkl'), 'wb') as f:
+        pickle.dump(gen, f)
 
 # 实例化模型
 # model = GATPredictor(gen.get_num_nodes(), node_embedding_size=64, num_heads=3)
 
 # 设定设备
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+device = 'cpu'
+gen.to(device)
 # 进行训练的测试函数
 def test_train_model():
     try:
         # 调用train_model函数
-        trained_model = train_model(gen, node_embedding_size=64,
-                                    epoches=1, batch_size=64, 
+        trained_model = train_model(gen, node_embedding_size=16,
+                                    epoches=100, batch_size=32,
                                     lr=1e-3, device=device,
                                     report_hook=report_hook, eval_hook=eval_hook,
                                     eval_epoches=10)
         print("训练成功！")
+        torch.save(trained_model.state_dict(), './data/gat_predictor.pt')
     except Exception as e:
         print(f'训练失败: {e}')
+        raise e
+
+import torch
+
+def cal_accuracy(logits, labels):
+    """
+    计算准确率的函数。
+    
+    参数:
+    logits -- 模型的输出，形状为 [batch_size, num_classes]
+    labels -- 真实的标签，形状为 [batch_size]
+    
+    返回:
+    accuracy -- 此批数据的准确率
+    """
+    # 获取最可能的类别索引
+    _, predicted = torch.max(logits, dim=1)
+    
+    # 计算正确预测的数量
+    correct = (predicted == labels).sum().item()
+    
+    # 计算准确率
+    accuracy = correct / labels.size(0)
+    
+    return accuracy
+
 
 # 定义一个简单的报告钩子函数
-def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits):
-    print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}")
+def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits, labels):
+    acc = cal_accuracy(logits, labels)
+    print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
+    
+    pass
 
 # 定义一个简单的评估钩子函数
 def eval_hook(model, gen):
