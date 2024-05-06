@@ -132,19 +132,26 @@ else:
 
 # 设定设备
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = 'cpu'
+#device = 'cpu'
 gen.to(device)
 # 进行训练的测试函数
 def test_train_model():
     try:
         # 调用train_model函数
+        reports = []
+        def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits, labels):
+            acc = cal_accuracy(logits, labels)
+            print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
+            reports.append({'epoch': epoch, 'timestep': timestep, 'b_idx': b_idx, 'loss': loss, 'acc': acc})
+            pass
         trained_model = train_model(gen, node_embedding_size=16,
-                                    epoches=100, batch_size=32,
+                                    epoches=100, batch_size=64,
                                     lr=1e-3, device=device,
                                     report_hook=report_hook, eval_hook=eval_hook,
                                     eval_epoches=10)
         print("训练成功！")
         torch.save(trained_model.state_dict(), './data/gat_predictor.pt')
+        torch.save(reports, './data/reports.pt')
     except Exception as e:
         print(f'训练失败: {e}')
         raise e
@@ -172,14 +179,6 @@ def cal_accuracy(logits, labels):
     accuracy = correct / labels.size(0)
     
     return accuracy
-
-
-# 定义一个简单的报告钩子函数
-def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits, labels):
-    acc = cal_accuracy(logits, labels)
-    print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
-    
-    pass
 
 # 定义一个简单的评估钩子函数
 def eval_hook(model, gen):
