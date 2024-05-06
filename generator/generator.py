@@ -1,9 +1,7 @@
 import pandas as pd
 import numpy as np
 import dgl
-from dgl import DGLGraph
 import torch
-from scipy.spatial.distance import pdist, squareform
 from dgl.nn.pytorch.conv import EdgeWeightNorm
 from tqdm import tqdm
 import time
@@ -49,7 +47,11 @@ class GraphGenerator():
         self.create_bills()
         self.training = True
 
-        pass     
+        pass   
+    
+    @staticmethod
+    def variant_name():
+        return "base"  
     
     def prepare_proposals(self):
         # 检查 proposals 是否包含 'bill_id' 列
@@ -122,32 +124,29 @@ class GraphGenerator():
         # members_list = sorted([member for sublist in members_list for member in sublist])
         # self.member2index = dict(zip(members_list, range(self.member_num)))
 
+        # 创建一个长为 member_num 的数组, 用于存储每个成员的投票次数
+        member_vote_count = np.zeros(self.member_num) 
 
         # 填充 meeting_bill_member_tensor
-        for idx, row in self.votes.iterrows():
-            meeting_idx = self.meeting2index[row['meeting_id']]
-            bill_idx = self.bill2index[row['bill_name']]
-            # 创建一个长为 member_num 的数组, 用于存储每个成员的投票次数
-            member_vote_count = np.zeros(self.member_num)   
-            member = row['id']
-            # print("row: ", row)
-            # print("member: ", member)
+        def process_row(row: pd.Series) -> None:
+            meeting_idx = self.meeting2index[row[-1]] # meeting_id
+            bill_idx = self.bill2index[row[0]] # bill_name
             # 如果 member 不在 member2index 中，跳过
-            if member not in self.member2index:
-                continue
-            member_idx = self.member2index[member]
-            if row['vote'] == 'Y':
-                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 1
-                member_vote_count[member_idx] += 1
-            elif row['vote'] == 'N':
-                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = -1
-                member_vote_count[member_idx] += 1
-            elif row['vote'] == 'NV':
-                self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = 0
-                member_vote_count[member_idx] += 1
+            #if member not in self.member2index:
+            #    return
+            member_idx = self.member2index[row[3]] # id
+            vote = row[-2] # vote
+            vote2val = {
+                'Y': 1,
+                'N': -1,
+                'NV': 0
+            }
+            self.meeting_bill_member_tensor_voteResult[meeting_idx, bill_idx, member_idx] = vote2val[vote]
             # 更新 meeting_bill_tensor_maxVoteCount
+            member_vote_count[member_idx] += 1
             self.meeting_bill_tensor_maxVoteCount[meeting_idx, bill_idx] = np.max(member_vote_count)
-            
+        self.votes.loc[self.votes['id'].isin(self.member2index)].apply(
+            process_row, axis=1, raw=True)
 
     def similarity_measure(self, u, v, meeting_index):
         m_copy = self.meeting_bill_member_tensor_voteResult
