@@ -48,7 +48,7 @@ def find_valid_columns(votes):
 
     return valid_indices
 
-
+from tqdm import tqdm
 def train_model(gen:GraphGenerator, node_embedding_size = 64,
                 epoches:int = 100, batch_size = 32,
                 lr:float=1e-3, device='cuda',
@@ -62,7 +62,7 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
     model.train()
     gen.train()
     for epoch in range(epoches):
-        for i, (g, bills) in enumerate(gen):
+        for i, (g, bills) in tqdm(enumerate(gen)):
             ##g: 所有节点都在, 但某些边被mask掉
             #g.to(device)
             votes:torch.Tensor= g.ndata['vote']##[N, B]矩阵, 填充为1,0,-1,-inf
@@ -139,16 +139,18 @@ def test_train_model():
     try:
         # 调用train_model函数
         reports = []
+        verbose = False
         def report_hook(epoch, timestep, b_idx, loss, g, proposal, logits, labels):
             acc = cal_accuracy(logits, labels)
-            print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
+            if verbose:
+                print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
             reports.append({'epoch': epoch, 'timestep': timestep, 'b_idx': b_idx, 'loss': loss, 'acc': acc})
             pass
         trained_model = train_model(gen, node_embedding_size=16,
-                                    epoches=100, batch_size=64,
+                                    epoches=10, batch_size=64,
                                     lr=1e-3, device=device,
                                     report_hook=report_hook, eval_hook=eval_hook,
-                                    eval_epoches=10)
+                                    eval_epoches=1)
         print("训练成功！")
         torch.save(trained_model.state_dict(), './data/gat_predictor.pt')
         torch.save(reports, './data/reports.pt')
@@ -181,8 +183,29 @@ def cal_accuracy(logits, labels):
     return accuracy
 
 # 定义一个简单的评估钩子函数
-def eval_hook(model, gen):
+def eval_hook(model:GATPredictor, gen:GraphGenerator):
+    gen.eval()
     print("评估模型...")
+    for i, (g, bills) in enumerate(gen):
+        votes:torch.Tensor= g.ndata['vote']
+        valid_mask = find_valid_columns(votes)
+        votes = votes[:, valid_mask].to(device)
+        sponsors = bills['sponsors'][valid_mask].to(device)
+        cosponsors = bills['cosponsors'][valid_mask].to(device)
+        node_mask = (votes > -10)
+        if node_mask.sum() < 1:
+            continue
+        labels = votes[node_mask] + 1
+        labels = labels.long()
+        proposal = {
+            'id':None,
+            'sponsors':sponsors,
+            'cosponsors':cosponsors
+        }
+        logits:torch.Tensor = model(i, g, proposal)
+        logits = logits.transpose(0, 1)
+        acc = cal_accuracy(logits[node_mask], labels)
+        print(f"Step: {i}, Acc: {acc}")
 
 # 运行测试
 test_train_model()
