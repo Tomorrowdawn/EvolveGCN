@@ -116,15 +116,17 @@ dataset_dir = 'data'  # 替换为你的数据集目录
 # train_set, test_set = split_data(votes) # 假设是对votes进行分割
 
 # 创建GraphGenerator实例
+GeneratorVariant = GraphGenerator
+gen_file = f'gen{GeneratorVariant.variant_name()}.pkl'
 import os
 import pickle
-if os.path.exists(os.path.join('./data', 'gen.pkl')):
-    with open(os.path.join('./data', 'gen.pkl'), 'rb') as f:
+if os.path.exists(os.path.join('./data', gen_file)):
+    with open(os.path.join('./data', gen_file), 'rb') as f:
         gen = pickle.load(f)
 else:
     cosponsors, members, votes = load_dataset(dataset_dir)
-    gen = GraphGenerator(proposals=cosponsors, members=members, votes=votes)
-    with open(os.path.join('./data', 'gen.pkl'), 'wb') as f:
+    gen = GeneratorVariant(proposals=cosponsors, members=members, votes=votes)
+    with open(os.path.join('./data', gen_file), 'wb') as f:
         pickle.dump(gen, f)
 
 # 实例化模型
