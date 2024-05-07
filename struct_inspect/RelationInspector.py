@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[73]:
+# In[1]:
 
 
 #####构建示例用作测试#####
@@ -49,18 +49,18 @@ dgl_G = dgl.from_networkx(G)
 # 添加边权重特征
 weights = torch.tensor([edata['weight'] for u, v, edata in G.edges(data=True) for _ in range(2)])
 dgl_G.edata['weight'] = weights
-node_ids = torch.arange(num_nodes)*2  # 假设节点ID从0开始递增
-dgl_G.ndata['node_id'] = node_ids
+#node_ids = torch.arange(num_nodes)*2  # 假设节点ID从0开始递增
+#dgl_G.ndata['node_id'] = node_ids
 
 
 # 输出DGL图的一些基本信息
 print("DGL图的节点数量：", dgl_G.number_of_nodes())
 print("DGL图的边数量：", dgl_G.number_of_edges())
 print("DGL图的边权重：", dgl_G.edata['weight'])
-print("DGL图的节点ID：", dgl_G.ndata['node_id'])
+#print("DGL图的节点ID：", dgl_G.ndata['node_id'])
 
 
-# In[114]:
+# In[10]:
 
 
 #####代码主体#####
@@ -72,9 +72,13 @@ id_name = 'node_id'#节点id的名字未固定，可以在这里改
 weight_name = 'weight'#边权重的名字，这里可以改
 
 class RelaAnaly(object):
-    def __init__(self,G):
+    def __init__(self,G):#G为DGL图
         self.G = G
-        self.nx_G = G.to_networkx(node_attrs=[id_name], edge_attrs=[weight_name])
+        self.nodes_num = G.number_of_nodes()
+        try:
+            self.nx_G = G.to_networkx(node_attrs=[id_name], edge_attrs=[weight_name])
+        except:
+            self.nx_G = G.to_networkx(edge_attrs=[weight_name])
         self.nx_G_simple = nx.Graph(self.nx_G)
         
     def ChangeOutput(self, dict0):#可以将原字典（key值为节点序号）变为新字典（key值为id_name）
@@ -84,13 +88,19 @@ class RelaAnaly(object):
             dict1[ids[i]] = dict0[i]
         return dict1
         
-    def InDegree(self, node_id):#节点的入度
+    def InDegree(self, node_id):#节点的入度,根据id_name
         node_index = (dgl_G.ndata[id_name] == node_id_to_find).nonzero().item()
-        return dgl_G.in_degrees(node_index)
+        return self.G.in_degrees(node_index)
     
     def OutDegree(self, node_id):#节点的出度
         node_index = (dgl_G.ndata[id_name] == node_id_to_find).nonzero().item()
-        return dgl_G.out_degrees(node_index)
+        return self.G.out_degrees(node_index)
+    
+    def InDegree_(self, node_index):#节点的入度,根据节点默认id
+        return self.G.in_degrees(node_index)
+    
+    def OutDegree_(self, node_index):#节点的出度
+        return self.G.out_degrees(node_index)
     
     def CenterDegree(self):#节点地位：度中心性 http://staff.ustc.edu.cn/~tongxu/socomp/slides/4.pdf
         return nx.degree_centrality(self.nx_G_simple)
@@ -112,7 +122,7 @@ class RelaAnaly(object):
     
     def PageRank(self):#PageRank算法 http://staff.ustc.edu.cn/~tongxu/socomp/slides/4.pdf
         #可排序后作为结构洞判断标准
-        return nx.pagerank(nx_G_simple)
+        return nx.pagerank(self.nx_G_simple)
  
     def get_holes(self, a = 1.0, b = 0.8, c = 0.75, d = 0.2):
         #结构洞获取参考,abcd为参数
@@ -123,10 +133,10 @@ class RelaAnaly(object):
         m2 = max(dict2.values())+0.001
         dict3 = nx.constraint(self.nx_G_simple)
         m3 = max(dict3.values())+0.001
-        dict4 = nx.clustering(nx_G_simple)
+        dict4 = nx.clustering(self.nx_G_simple)
         m4 = max(dict4.values())+0.001
         thedict = {}
-        for i in range(len(np.array(self.G.ndata[id_name]))):
+        for i in range(self.nodes_num):
             thedict[i] = a*dict1[i]/m1 + b*dict2[i]/m2 - c*dict3[i]/m3 - d*dict4[i]/m4
         return sorted(thedict.items(), key=lambda x: x[1], reverse=True)
 
