@@ -5,6 +5,7 @@ import torch
 from dgl.nn.pytorch.conv import EdgeWeightNorm
 from tqdm import tqdm
 import time
+from copy import deepcopy
 
 class GraphGenerator():
     def __init__(self, proposals:pd.DataFrame, 
@@ -174,8 +175,8 @@ class GraphGenerator():
         subgraphs = []  # 存储每次会议的子图
 
         m_copy = self.meeting_bill_member_tensor_voteResult
-        mask = m_copy == -np.inf
-        m_copy[mask] = 0
+        #mask = m_copy == -np.inf
+        #m_copy[mask] = 0
 
         # 对每次会议创建子图
         # for meeting_index in range(self.meeting_num):
@@ -183,8 +184,8 @@ class GraphGenerator():
             start_time = time.time()
 
             # 提取每次会议的投票tensor
-            votes_slice = m_copy[meeting_index, :, :]
-
+            votes_slice = deepcopy(m_copy[meeting_index, :, :])
+            votes_slice[votes_slice==-np.inf] = 0
             
                         
             # 计算相似度矩阵（其尺寸应该是 num_members x num_members）
@@ -235,6 +236,7 @@ class GraphGenerator():
                 g.add_edges(src_list, dst_list, {'weight': edge_weights_tensor})
             
             # # 将NumPy数组转换为PyTorch张量
+            votes_slice = m_copy[meeting_index, :, :]
             vote_data = torch.from_numpy(votes_slice.T).float()
 
             # # 输出有多少个节点

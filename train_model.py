@@ -57,8 +57,9 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
     print("num nodes: ", N)
     model = GATPredictor(N, node_embedding_size, num_heads=4)
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
     criterion = torch.nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0 = 20, T_mult = 2)
     model.train()
     gen.train()
     for epoch in range(epoches):
@@ -76,6 +77,9 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
                 
                 votes, sponsors, cosponsors = batch
                 #print("batch idx: ", b_idx)
+                #yes_mask = (votes.long() == 1)
+                #sampled_yes = torch.nn.functional.dropout(yes_mask.float(), p=0.7, training=True).bool()
+                #node_mask = ((votes > -10) & (votes < 0.5)) | sampled_yes
                 node_mask = (votes > -10)
                 if node_mask.sum() < 1:
                     #print("skip")
@@ -98,6 +102,7 @@ def train_model(gen:GraphGenerator, node_embedding_size = 64,
                 if report_hook is not None:
                     report_hook(epoch, i, b_idx, loss.item(), g,
                                 proposal, logits[node_mask], labels)
+        scheduler.step()
         if epoch > 0 and epoch % eval_epoches == 0 and eval_hook is not None:
             gen.eval()
             eval_hook(model, gen)
@@ -134,6 +139,7 @@ else:
 
 # 设定设备
 device = torch.device('cpu')#'cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cuda'
 #device = 'cpu'
 gen.to(device)
 # 进行训练的测试函数
@@ -153,11 +159,11 @@ def test_train_model():
                 print(f"Epoch: {epoch}, Step: {timestep}, Batch: {b_idx}, Loss: {loss}, Acc: {acc}")
             reports.append({'epoch': epoch, 'timestep': timestep, 'b_idx': b_idx, 'loss': loss, 'acc': acc})
             pass
-        trained_model = train_model(gen, node_embedding_size=16,
-                                    epoches=10, batch_size=64,
-                                    lr=1e-3, device=device,
+        trained_model = train_model(gen, node_embedding_size=8,
+                                    epoches=100, batch_size=256,
+                                    lr=5e-5, device=device,
                                     report_hook=report_hook, eval_hook=eval_hook,
-                                    eval_epoches=1)
+                                    eval_epoches=5)
         print("训练成功！")
         torch.save(trained_model.state_dict(), './data/gat_predictor.pt')
         torch.save(reports, './data/reports.pt')
@@ -190,8 +196,11 @@ def cal_accuracy(logits, labels):
     return accuracy
 
 # 定义一个简单的评估钩子函数
+rebalance = False
+@torch.inference_mode()
 def eval_hook(model:GATPredictor, gen:GraphGenerator):
     gen.eval()
+    model.eval()
     print("评估模型...")
     for i, (g, bills) in enumerate(gen):
         votes:torch.Tensor= g.ndata['vote']
@@ -200,6 +209,10 @@ def eval_hook(model:GATPredictor, gen:GraphGenerator):
         sponsors = bills['sponsors'][valid_mask].to(device)
         cosponsors = bills['cosponsors'][valid_mask].to(device)
         node_mask = (votes > -10)
+        if rebalance:
+            yes_mask = (votes.long() == 1)
+            sampled_yes = torch.nn.functional.dropout(yes_mask.float(), p=0.67, training=True).bool()
+            node_mask = ((votes > -10) & (votes < 0.5)) | sampled_yes
         if node_mask.sum() < 1:
             continue
         labels = votes[node_mask] + 1
@@ -213,6 +226,15 @@ def eval_hook(model:GATPredictor, gen:GraphGenerator):
         logits = logits.transpose(0, 1)
         acc = cal_accuracy(logits[node_mask], labels)
         print(f"Step: {i}, Acc: {acc}")
+        print("predictions : ")
+        preds = logits[node_mask].max(1)[1]
+        print(preds)
+        total = len(preds)
+        print("0, 1, 2:", (preds == 0).sum()/total, (preds == 1).sum()/total, (preds == 2).sum()/total)
+        print("labels : ")
+        print(labels)
+        print("0, 1, 2:", (labels == 0).sum()/total, (labels == 1).sum()/total, (labels == 2).sum()/total)
+        print()
 
 # 运行测试
 test_train_model()
