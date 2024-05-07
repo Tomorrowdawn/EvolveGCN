@@ -24,7 +24,7 @@ python train_model.py
 
 ### Result
 
-0.98 on testset.
+0.73 on testset.
 
 
 ## 预测算法
@@ -90,6 +90,6 @@ $$
 
 ## 效果
 
-![](https://img2.imgtp.com/2024/05/06/6I2GH8SN.png)
+![](https://img2.imgtp.com/2024/05/07/R3APgOFE.png)
 
-测试集报告: 准确率0.98
+测试集报告: 准确率0.73
