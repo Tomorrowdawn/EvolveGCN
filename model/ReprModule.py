@@ -139,18 +139,21 @@ class ReprModule(nn.Module):
         self.model = EvolveGCNO(in_feats=in_feats, n_hidden=n_hidden, num_layers=num_layers)
     def forward(self, g_list):
         return self.model(g_list)
-
+from torch.nn import LayerNorm, LazyBatchNorm1d
 class WeightedGAT(nn.Module):
     def __init__(self, node_feats_num,
                  embedding_size, heads=4, layers=3, split_heads=True):
         super().__init__()
         self.gat_layers = nn.ModuleList()
+        self.layer_norms = nn.ModuleList()
         # three-layer GAT
         if split_heads:
             if embedding_size % heads != 0:
                 raise ValueError("embedding size should be divisible by heads")
             embedding_size = embedding_size // heads
         for i in range(layers):
+            self.layer_norms.append(LayerNorm(embedding_size * heads))
+            #self.layer_norms.append(LazyBatchNorm1d())
             if i == 0:
                 self.gat_layers.append(
                     GATConv(
@@ -174,5 +177,6 @@ class WeightedGAT(nn.Module):
         for i, layer in enumerate(self.gat_layers):
             h = layer(g, h, edge_weight=edge_weight)
             h = h.flatten(1)
+            h = self.layer_norms[i](h)
         return h
     

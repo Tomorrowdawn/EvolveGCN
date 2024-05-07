@@ -6,6 +6,7 @@ import torch
 from torch.nn.functional import scaled_dot_product_attention
 import torch.nn.functional as F
 import warnings
+from torch.nn import LayerNorm
 def get_embeddings(embeddings, *indices):
     assert indices[0].dim() == 2
     # 在 embeddings 后面拼接一个全零的 embedding
