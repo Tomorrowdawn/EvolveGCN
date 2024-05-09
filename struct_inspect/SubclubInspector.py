@@ -122,13 +122,16 @@ class SubclubInspector:
         ).fit_predict(nx.to_numpy_array(self.nx_graph))
         return spectral_result
 
-    def visualize_clusters(self, clustering_result, figsize=(8, 6), path=None):
+    def visualize_clusters(
+        self, clustering_result, figsize=(8, 6), node_size=300, path=None
+    ):
         """
         绘制带有聚类信息的图。
 
         Parameters:
         - clustering_result (numpy.ndarray): 节点的聚类结果。
         - figsize (tuple): 图的大小。
+        - node_size (int): 节点的大小。
         - path (str): 图的保存路径。为None不保存图。
 
         Returns:
@@ -150,10 +153,11 @@ class SubclubInspector:
 
         nx.draw_networkx_edges(self.nx_graph, pos)
         plt.title("Graph with Clusters")
-        plt.show()
 
         if path:
             plt.savefig(path)
+
+        plt.show()
 
 
 # 使用示例
